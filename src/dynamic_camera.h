@@ -47,6 +47,52 @@ struct DynamicCamera {
         // lookahead) appropriately. Next,
         // set the camera center by offsetting the cameraUnadjustedCenter, combining lookAhead.
         // Finally update cameraUnadjustedCenter, but without lookahead.
+
+
+        // Which way is the player moving? -1 left, 0 still, +1 right.
+        float dir = 0.f;
+        if (trackedVelocityWorld.x > 0.f) {
+            dir = 1.f;
+        } else if (trackedVelocityWorld.x < 0.f) {
+            dir = -1.f;
+        }
+
+        // lookAhead is a window percent; convert it to a world distance (x only).
+        float lookAheadWorld = camera.windowPercentToWorldDist({lookAhead, 0.f}).x;
+
+        // Where we'd like the lookahead offset to be, then ease toward it.
+        float targetOffset = dir * lookAheadWorld;
+        lookaheadState += alpha * (targetOffset - lookaheadState);
+
+        // Width of the view in world units, from the unadjusted camera.
+        float viewWidth = camera.windowPercentToWorldDist({1.f, 0.f}).x;
+        float unadjustedX = cameraUnadjustedCenter.x;
+
+        // Player's screen position (0..1) relative to the unadjusted camera.
+        float px = (trackedPosWorld.x - (unadjustedX - viewWidth * 0.5f)) / viewWidth;
+
+        // Soft zone: ease the camera toward putting the player on the violated green line.
+        float overshoot = 0.f;
+        if (px < deadZoneX.min) {
+            overshoot = px - deadZoneX.min;
+        } else if (px > deadZoneX.max) {
+            overshoot = px - deadZoneX.max;
+        }
+        unadjustedX += alpha * overshoot * viewWidth;
+
+        // Hard zone: re-measure, then snap so the player is at most ON the red line.
+        px = (trackedPosWorld.x - (unadjustedX - viewWidth * 0.5f)) / viewWidth;
+        if (px < softZoneX.min) {
+            unadjustedX += (px - softZoneX.min) * viewWidth;
+        } else if (px > softZoneX.max) {
+            unadjustedX += (px - softZoneX.max) * viewWidth;
+        }
+
+        // Real camera = zone-only camera + lookahead offset.
+        camera.setCameraCenter({unadjustedX + lookaheadState, cameraUnadjustedCenter.y});
+
+        // Save the lookahead-free center for next frame.
+        cameraUnadjustedCenter.x = unadjustedX;
     }
 
     float alpha;  // alpha to use for damping of camera position, *as well as* for smoothing of
